@@ -69,7 +69,7 @@ def limpiar_usd(valor):
 df["usd"] = df["usd"].apply(limpiar_usd)
 
 # === 4️⃣ Limpieza de texto ===
-for col in ["team", "agent", "country", "affiliate", "id"]:
+for col in ["team", "agent", "country", "affiliate", "id", "source"]:
     if col in df.columns:
         df[col] = df[col].astype(str).str.strip().str.title()
         df[col].replace({"Nan": None, "None": None, "": None}, inplace=True)
@@ -127,6 +127,7 @@ app.layout = html.Div(
                     },
                     children=[
                         html.H4("Date", style={"color": "#D4AF37", "textAlign": "center"}),
+
                         dcc.DatePickerRange(
                             id="filtro-fecha",
                             start_date=fecha_min,
@@ -134,6 +135,7 @@ app.layout = html.Div(
                             display_format="YYYY-MM-DD",
                             style={"marginBottom": "20px", "textAlign": "center"},
                         ),
+
                         html.Div([
                             html.Label("Team", style={"color": "#D4AF37", "fontWeight": "bold"}),
                             dcc.Dropdown(sorted(df["team"].dropna().unique()), [], multi=True, id="filtro-team"),
@@ -146,6 +148,9 @@ app.layout = html.Div(
 
                             html.Label("Affiliate", style={"color": "#D4AF37", "fontWeight": "bold"}),
                             dcc.Dropdown(sorted(df["affiliate"].dropna().unique()), [], multi=True, id="filtro-affiliate"),
+
+                            html.Label("Source", style={"color": "#D4AF37", "fontWeight": "bold"}),  # 🔹 Nuevo filtro
+                            dcc.Dropdown(sorted(df["source"].dropna().unique()), [], multi=True, id="filtro-source"),
 
                             html.Label("ID", style={"color": "#D4AF37", "fontWeight": "bold"}),
                             dcc.Dropdown(sorted(df["id"].dropna().unique()), [], multi=True, id="filtro-id"),
@@ -213,10 +218,11 @@ app.layout = html.Div(
         Input("filtro-agent", "value"),
         Input("filtro-country", "value"),
         Input("filtro-affiliate", "value"),
+        Input("filtro-source", "value"),   # 🔹 Nuevo input
         Input("filtro-id", "value"),
     ],
 )
-def actualizar_dashboard(start, end, team, agent, country, affiliate, id_user):
+def actualizar_dashboard(start, end, team, agent, country, affiliate, source, id_user):
     df_filtrado = df.copy()
 
     if start and end:
@@ -227,10 +233,13 @@ def actualizar_dashboard(start, end, team, agent, country, affiliate, id_user):
     if agent: df_filtrado = df_filtrado[df_filtrado["agent"].isin(agent)]
     if country: df_filtrado = df_filtrado[df_filtrado["country"].isin(country)]
     if affiliate: df_filtrado = df_filtrado[df_filtrado["affiliate"].isin(affiliate)]
+    if source: df_filtrado = df_filtrado[df_filtrado["source"].isin(source)]  # 🔹 Nuevo filtro
     if id_user: df_filtrado = df_filtrado[df_filtrado["id"].isin(id_user)]
 
+    # 🔹 MOUNT USERS: ahora cuenta el total de filas por ID, no los únicos
+    total_mount_users = len(df_filtrado)  
+
     total_usd = df_filtrado["usd"].sum()
-    total_users = df_filtrado["id"].nunique()
     target = total_usd * 1.1
 
     card_style = {
@@ -244,7 +253,7 @@ def actualizar_dashboard(start, end, team, agent, country, affiliate, id_user):
 
     indicador_usuarios = html.Div([
         html.H4("MOUNT USERS", style={"color": "#D4AF37", "fontWeight": "bold"}),
-        html.H2(f"{total_users:,}", style={"color": "#FFFFFF", "fontSize": "36px"})
+        html.H2(f"{total_mount_users:,}", style={"color": "#FFFFFF", "fontSize": "36px"})
     ], style=card_style)
 
     indicador_usd = html.Div([
@@ -268,47 +277,7 @@ def actualizar_dashboard(start, end, team, agent, country, affiliate, id_user):
     return indicador_usuarios, indicador_usd, indicador_target, fig_country, fig_affiliate, fig_team, fig_usd_date, df_filtrado.to_dict("records")
 
 
-# === 9️⃣ Captura PDF/PPT desde iframe ===
-app.index_string = '''
-<!DOCTYPE html>
-<html>
-<head>
-  {%metas%}
-  <title>OBL Digital — Dashboard RTN</title>
-  {%favicon%}
-  {%css%}
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-</head>
-<body>
-  {%app_entry%}
-  <footer>
-    {%config%}
-    {%scripts%}
-    {%renderer%}
-  </footer>
-
-  <script>
-    window.addEventListener("message", async (event) => {
-      if (!event.data || event.data.action !== "capture_dashboard") return;
-
-      try {
-        const canvas = await html2canvas(document.body, { useCORS: true, scale: 2, backgroundColor: "#0d0d0d" });
-        const imgData = canvas.toDataURL("image/png");
-
-        window.parent.postMessage({
-          action: "capture_image",
-          img: imgData,
-          filetype: event.data.type
-        }, "*");
-      } catch (err) {
-        console.error("Error al capturar dashboard:", err);
-        window.parent.postMessage({ action: "capture_done" }, "*");
-      }
-    });
-  </script>
-</body>
-</html>
-'''
-
+# === 9️⃣ Render ===
 if __name__ == "__main__":
     app.run_server(debug=True, port=8054)
+
